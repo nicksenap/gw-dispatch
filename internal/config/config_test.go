@@ -50,6 +50,18 @@ func TestLoadRejectsCustomCommandWithoutPrompt(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsPromptPlaceholderInExecutable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dispatch.toml")
+	if err := os.WriteFile(path, []byte("[agents.bad]\ncommand = [\"{prompt}\", \"fixed\"]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("Load() error = nil, want executable validation error")
+	}
+}
+
 func TestDefaultPathUsesGroveDir(t *testing.T) {
 	t.Setenv("GROVE_DIR", filepath.Join(t.TempDir(), "grove"))
 	want := filepath.Join(os.Getenv("GROVE_DIR"), "dispatch.toml")

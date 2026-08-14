@@ -57,8 +57,11 @@ func Load(path string) (Config, error) {
 		if len(agent.Command) == 0 || strings.TrimSpace(agent.Command[0]) == "" {
 			return Config{}, fmt.Errorf("agent %q command cannot be empty", name)
 		}
+		if strings.Contains(agent.Command[0], promptPlaceholder) {
+			return Config{}, fmt.Errorf("agent %q executable cannot contain %s", name, promptPlaceholder)
+		}
 		hasPrompt := false
-		for _, arg := range agent.Command {
+		for _, arg := range agent.Command[1:] {
 			if strings.Contains(arg, promptPlaceholder) {
 				hasPrompt = true
 				break

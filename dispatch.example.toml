@@ -1,0 +1,6 @@
+default_agent = "pi"
+
+# Custom agents are argv arrays. The prompt placeholder must appear in an
+# argument and is passed without shell evaluation.
+[agents.aider]
+command = ["aider", "--message", "{prompt}"]
