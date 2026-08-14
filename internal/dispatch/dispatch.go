@@ -41,18 +41,22 @@ func ResolveAgent(cfg config.Config, name, prompt string) ([]string, error) {
 		}
 	}
 
-	command, ok := builtinAgents[name]
-	if custom, customOK := cfg.Agents[name]; customOK {
+	command, builtin := builtinAgents[name]
+	custom, configured := cfg.Agents[name]
+	if configured {
 		command = custom.Command
-		ok = true
 	}
-	if !ok {
+	if !builtin && !configured {
 		return nil, fmt.Errorf("unknown agent %q (built-ins: pi, claude, codex, opencode)", name)
 	}
 
 	resolved := make([]string, len(command))
 	for i, arg := range command {
-		resolved[i] = strings.ReplaceAll(arg, promptPlaceholder, prompt)
+		promptArg := prompt
+		if strings.HasPrefix(arg, promptPlaceholder) && strings.HasPrefix(prompt, "-") {
+			promptArg = "\n" + prompt
+		}
+		resolved[i] = strings.ReplaceAll(arg, promptPlaceholder, promptArg)
 	}
 	return resolved, nil
 }
@@ -101,13 +105,16 @@ func FindWorkspacePath(statePath, name string) (string, error) {
 }
 
 func Run(opts Options, cfg config.Config, runner Runner) error {
-	if strings.TrimSpace(opts.Branch) == "" {
+	branch := strings.TrimSpace(opts.Branch)
+	repos := strings.TrimSpace(opts.Repos)
+	preset := strings.TrimSpace(opts.Preset)
+	if branch == "" {
 		return fmt.Errorf("branch is required")
 	}
 	if strings.TrimSpace(opts.Prompt) == "" {
 		return fmt.Errorf("prompt is required")
 	}
-	if (opts.Repos == "") == (opts.Preset == "") {
+	if (repos == "") == (preset == "") {
 		return fmt.Errorf("exactly one of repos or preset is required")
 	}
 
@@ -115,20 +122,22 @@ func Run(opts Options, cfg config.Config, runner Runner) error {
 	if err != nil {
 		return err
 	}
-	if _, err := runner.LookPath("gw"); err != nil {
+	gwPath, err := resolveExecutable(runner, "gw")
+	if err != nil {
 		return fmt.Errorf("gw executable not found: %w", err)
 	}
-	if _, err := runner.LookPath(agentCommand[0]); err != nil {
+	agentPath, err := resolveExecutable(runner, agentCommand[0])
+	if err != nil {
 		return fmt.Errorf("agent executable %q not found: %w", agentCommand[0], err)
 	}
 
-	createArgs := []string{"create", "--branch", opts.Branch}
-	if opts.Repos != "" {
-		createArgs = append(createArgs, "--repos", opts.Repos)
+	createArgs := []string{"create", "--branch", branch}
+	if repos != "" {
+		createArgs = append(createArgs, "--repos", repos)
 	} else {
-		createArgs = append(createArgs, "--preset", opts.Preset)
+		createArgs = append(createArgs, "--preset", preset)
 	}
-	if err := runner.Run("gw", createArgs, ""); err != nil {
+	if err := runner.Run(gwPath, createArgs, ""); err != nil {
 		return fmt.Errorf("gw create failed: %w", err)
 	}
 
@@ -136,12 +145,24 @@ func Run(opts Options, cfg config.Config, runner Runner) error {
 	if statePath == "" {
 		statePath = DefaultStatePath()
 	}
-	workspacePath, err := FindWorkspacePath(statePath, DeriveWorkspaceName(opts.Branch))
+	workspaceName := DeriveWorkspaceName(branch)
+	workspacePath, err := FindWorkspacePath(statePath, workspaceName)
 	if err != nil {
-		return err
+		return fmt.Errorf("workspace %q was created but its path could not be resolved: %w; inspect with gw list", workspaceName, err)
 	}
-	if err := runner.Run(agentCommand[0], agentCommand[1:], workspacePath); err != nil {
+	if err := runner.Run(agentPath, agentCommand[1:], workspacePath); err != nil {
 		return fmt.Errorf("agent failed: %w; workspace retained at %s", err, workspacePath)
 	}
 	return nil
+}
+
+func resolveExecutable(runner Runner, name string) (string, error) {
+	resolved, err := runner.LookPath(name)
+	if err != nil {
+		return "", err
+	}
+	if filepath.IsAbs(resolved) {
+		return resolved, nil
+	}
+	return filepath.Abs(resolved)
 }

@@ -1,6 +1,11 @@
 package cmd
 
 import (
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+
 	"github.com/nicksenap/gw-dispatch/internal/config"
 	"github.com/nicksenap/gw-dispatch/internal/dispatch"
 	"github.com/spf13/cobra"
@@ -26,9 +31,15 @@ with the supplied prompt. Pi is used by default; Claude Code, Codex, OpenCode,
 and custom configured agents are also supported.`,
 		Example: `  gw dispatch -b feat/login -r api,web --prompt "Implement login"
   gw dispatch -b feat/login -p backend --agent claude --prompt "Implement login"`,
+		Args:          cobra.NoArgs,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if cmd.Flags().Changed("config") {
+				if _, err := os.Stat(configPath); err != nil {
+					return fmt.Errorf("read config %s: %w", configPath, err)
+				}
+			}
 			cfg, err := config.Load(configPath)
 			if err != nil {
 				return err
@@ -62,4 +73,15 @@ func Execute() error {
 	return newRootCommand(func(opts dispatch.Options, cfg config.Config) error {
 		return dispatch.Run(opts, cfg, dispatch.ExecRunner{})
 	}).Execute()
+}
+
+func ExitCode(err error) int {
+	if err == nil {
+		return 0
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() > 0 {
+		return exitErr.ExitCode()
+	}
+	return 1
 }

@@ -23,6 +23,7 @@ go install github.com/nicksenap/gw-dispatch@latest
 
 Requirements:
 
+- macOS or Linux
 - `gw` on `PATH`
 - The selected coding-agent executable on `PATH`
 
@@ -76,15 +77,16 @@ gw dispatch -b feat/task -p backend --agent aider --prompt "Implement the task"
 
 ### Custom-command rules
 
-- `command` is an argv array, not a shell command.
+- `command` is an argv array; `gw-dispatch` never adds an implicit shell.
 - At least one argument must contain `{prompt}`.
 - `{prompt}` cannot appear in the executable (`command[0]`).
 - Built-in names can be overridden in config.
-- Prompt text is passed directly as an argument; it is never evaluated by a shell.
+- Configuration is trusted executable policy. A command such as `["sh", "-c", "{prompt}"]` explicitly opts into shell evaluation and is unsafe for untrusted prompts.
+- Put `{prompt}` in a data-bearing argument (for example, after `--message`) rather than where an agent could parse it as another control flag.
 
 ## Behavior and failures
 
-`gw-dispatch` validates the agent before creating anything, runs `gw create`, reads the resulting workspace path from Grove state, and starts the agent with that directory as its working directory. The agent inherits the current terminal and remains interactive.
+`gw-dispatch` validates and resolves the agent executable before creating anything, runs `gw create`, reads the resulting workspace path from Grove state, and starts that exact executable with the workspace as its working directory. The agent inherits the current terminal and environment and remains interactive. Use the selected agent's normal project-trust, sandbox, approval, and tool controls when dispatching into untrusted repositories.
 
 If workspace creation fails, no agent starts. If the agent exits unsuccessfully, the workspace is retained and its path is included in the error.
 

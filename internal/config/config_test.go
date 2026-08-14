@@ -62,6 +62,24 @@ func TestLoadRejectsPromptPlaceholderInExecutable(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsUnknownKeys(t *testing.T) {
+	tests := map[string]string{
+		"top level":   "default_aget = \"claude\"\n",
+		"agent field": "[agents.aider]\ncomand = [\"aider\", \"{prompt}\"]\n",
+	}
+	for name, contents := range tests {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "dispatch.toml")
+			if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Load(path); err == nil {
+				t.Fatal("Load() error = nil, want unknown key error")
+			}
+		})
+	}
+}
+
 func TestDefaultPathUsesGroveDir(t *testing.T) {
 	t.Setenv("GROVE_DIR", filepath.Join(t.TempDir(), "grove"))
 	want := filepath.Join(os.Getenv("GROVE_DIR"), "dispatch.toml")

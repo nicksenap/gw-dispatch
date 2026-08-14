@@ -23,7 +23,7 @@ default_agent = "pi"
 command = ["aider", "--message", "{prompt}"]
 ```
 
-Commands are argv arrays, not shell strings. Every custom command must include `{prompt}` in at least one argument. Built-ins may be overridden by a config entry with the same name.
+Commands are argv arrays and `gw-dispatch` never adds an implicit shell. Every custom command must include `{prompt}` in at least one argument. Built-ins may be overridden by a config entry with the same name. Configuration is trusted executable policy: users can explicitly opt into a shell or interpreter, and must not do so with untrusted prompts.
 
 ## Execution
 
@@ -52,7 +52,7 @@ Commands are argv arrays, not shell strings. Every custom command must include `
 
 - Always: invoke commands directly without a shell; validate config before creating a workspace; preserve terminal streams.
 - Ask first: background execution, lifecycle/session management, or additional Grove create flags.
-- Never: evaluate config as shell code, interpolate prompts into shell strings, or silently delete a workspace after an agent launch failure.
+- Never: add implicit shell evaluation, interpolate prompts into launcher-built shell strings, or silently delete a workspace after an agent launch failure.
 
 ## Success criteria
 

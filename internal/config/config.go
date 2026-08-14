@@ -38,11 +38,19 @@ func Load(path string) (Config, error) {
 		path = DefaultPath()
 	}
 
-	if _, err := toml.DecodeFile(path, &cfg); err != nil {
+	metadata, err := toml.DecodeFile(path, &cfg)
+	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return cfg, nil
 		}
 		return Config{}, fmt.Errorf("read config %s: %w", path, err)
+	}
+	if undecoded := metadata.Undecoded(); len(undecoded) > 0 {
+		keys := make([]string, len(undecoded))
+		for i, key := range undecoded {
+			keys[i] = key.String()
+		}
+		return Config{}, fmt.Errorf("unknown config keys: %s", strings.Join(keys, ", "))
 	}
 	if cfg.DefaultAgent == "" {
 		cfg.DefaultAgent = "pi"

@@ -5,4 +5,4 @@
 - [x] Implement and test CLI validation.
 - [x] Add installation, configuration, and usage documentation.
 - [x] Add CI and GoReleaser configuration.
-- [ ] Verify and review the complete change.
+- [x] Verify and review the complete change.
