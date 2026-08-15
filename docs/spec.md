@@ -7,10 +7,10 @@ Provide an agent-agnostic Grove plugin that creates a workspace and starts an in
 ## CLI contract
 
 ```text
-gw dispatch --branch <branch> (--repos <repos> | --preset <preset>) --prompt <prompt> [--agent <name>] [--config <path>]
+gw dispatch [--branch <branch>] [--repos <repos> | --preset <preset>] --prompt <prompt> [--no-hooks] [--agent <name>] [--config <path>]
 ```
 
-Short flags mirror `gw create`: `-b`, `-r`, and `-p`. Pi is the default agent. Built-in agent names are `pi`, `claude`, `codex`, and `opencode`.
+Short flags `-b`, `-r`, `-p`, and `-n` mirror `gw create`; `-P` is shorthand for `--prompt`. `-n`/`--no-hooks` is forwarded to the `gw create` subprocess. When `--branch` is omitted, dispatch normalizes the prompt, builds a capped readable slug, and appends the first eight hexadecimal characters of its SHA-256 hash under the `dispatch/` prefix. Pi is the default agent. Built-in agent names are `pi`, `claude`, `codex`, and `opencode`.
 
 ## Configuration
 
@@ -18,21 +18,24 @@ The default path is `$GROVE_DIR/dispatch.toml`, falling back to `~/.grove/dispat
 
 ```toml
 default_agent = "pi"
+default_preset = "backend"
+# Alternatively: default_repos = "api,web"
 
 [agents.aider]
 command = ["aider", "--message", "{prompt}"]
 ```
 
-Commands are argv arrays and `gw-dispatch` never adds an implicit shell. Every custom command must include `{prompt}` in at least one argument. Built-ins may be overridden by a config entry with the same name. Configuration is trusted executable policy: users can explicitly opt into a shell or interpreter, and must not do so with untrusted prompts.
+`default_preset` and `default_repos` belong to dispatch config, are mutually exclusive, and are overridden by an explicit selector flag. Commands are argv arrays and `gw-dispatch` never adds an implicit shell. Every custom command must include `{prompt}` in at least one argument. Built-ins may be overridden by a config entry with the same name. Configuration is trusted executable policy: users can explicitly opt into a shell or interpreter, and must not do so with untrusted prompts.
 
 ## Execution
 
 1. Load and validate configuration.
 2. Resolve the selected agent and verify both `gw` and the agent executable are on `PATH`.
-3. Run `gw create` with the supplied branch and repo selection.
-4. Derive the workspace name using Grove's branch-to-name rule and read its path from `$GROVE_STATE` or `$GROVE_DIR/state.json`.
-5. Start the selected agent in that directory, inheriting stdin, stdout, stderr, and environment.
-6. Propagate create or agent failures. If agent launch fails after creation, report the retained workspace path.
+3. Derive a deterministic branch from the prompt when no branch is supplied.
+4. Resolve repo selection from explicit flags or the dispatch config default, then run `gw create`.
+5. Derive the workspace name using Grove's branch-to-name rule and read its path from `$GROVE_STATE` or `$GROVE_DIR/state.json`.
+6. Start the selected agent in that directory, inheriting stdin, stdout, stderr, and environment.
+7. Propagate create or agent failures. If agent launch fails after creation, report the retained workspace path.
 
 ## Built-in commands
 
@@ -59,6 +62,6 @@ Commands are argv arrays and `gw-dispatch` never adds an implicit shell. Every c
 - The documented Pi, Claude, Codex, and OpenCode invocations resolve correctly.
 - `--agent` overrides the configured default.
 - A user-defined agent works through `dispatch.toml`.
-- Exactly one of `--repos` and `--preset` is required.
+- Exactly one repo selector resolves from explicit `--repos`/`--preset` or dispatch config defaults.
 - Failed workspace creation never starts an agent.
 - Agent launch happens from the created workspace root.

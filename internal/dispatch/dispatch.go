@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -25,6 +26,7 @@ type Options struct {
 	Preset    string
 	Prompt    string
 	Agent     string
+	NoHooks   bool
 	StatePath string
 }
 
@@ -59,6 +61,31 @@ func ResolveAgent(cfg config.Config, name, prompt string) ([]string, error) {
 		resolved[i] = strings.ReplaceAll(arg, promptPlaceholder, promptArg)
 	}
 	return resolved, nil
+}
+
+func DeriveBranchFromPrompt(prompt string) string {
+	normalized := strings.ToLower(strings.Join(strings.Fields(prompt), " "))
+	sum := sha256.Sum256([]byte(normalized))
+
+	var slug strings.Builder
+	lastWasSeparator := false
+	for _, char := range normalized {
+		if (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') {
+			slug.WriteRune(char)
+			lastWasSeparator = false
+		} else if slug.Len() > 0 && !lastWasSeparator {
+			slug.WriteByte('-')
+			lastWasSeparator = true
+		}
+		if slug.Len() >= 40 {
+			break
+		}
+	}
+	readable := strings.Trim(slug.String(), "-")
+	if readable == "" {
+		readable = "task"
+	}
+	return fmt.Sprintf("dispatch/%s-%x", readable, sum[:4])
 }
 
 func DeriveWorkspaceName(branch string) string {
@@ -108,14 +135,18 @@ func Run(opts Options, cfg config.Config, runner Runner) error {
 	branch := strings.TrimSpace(opts.Branch)
 	repos := strings.TrimSpace(opts.Repos)
 	preset := strings.TrimSpace(opts.Preset)
-	if branch == "" {
-		return fmt.Errorf("branch is required")
-	}
 	if strings.TrimSpace(opts.Prompt) == "" {
 		return fmt.Errorf("prompt is required")
 	}
+	if branch == "" {
+		branch = DeriveBranchFromPrompt(opts.Prompt)
+	}
+	if repos == "" && preset == "" {
+		repos = strings.TrimSpace(cfg.DefaultRepos)
+		preset = strings.TrimSpace(cfg.DefaultPreset)
+	}
 	if (repos == "") == (preset == "") {
-		return fmt.Errorf("exactly one of repos or preset is required")
+		return fmt.Errorf("exactly one of repos or preset is required, either as a flag or dispatch config default")
 	}
 
 	agentCommand, err := ResolveAgent(cfg, opts.Agent, opts.Prompt)
@@ -136,6 +167,9 @@ func Run(opts Options, cfg config.Config, runner Runner) error {
 		createArgs = append(createArgs, "--repos", repos)
 	} else {
 		createArgs = append(createArgs, "--preset", preset)
+	}
+	if opts.NoHooks {
+		createArgs = append(createArgs, "--no-hooks")
 	}
 	if err := runner.Run(gwPath, createArgs, ""); err != nil {
 		return fmt.Errorf("gw create failed: %w", err)

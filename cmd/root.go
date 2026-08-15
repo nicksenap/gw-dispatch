@@ -22,6 +22,7 @@ func newRootCommand(run dispatchFunc) *cobra.Command {
 	var prompt string
 	var agent string
 	var configPath string
+	var noHooks bool
 
 	command := &cobra.Command{
 		Use:   "gw-dispatch",
@@ -29,8 +30,8 @@ func newRootCommand(run dispatchFunc) *cobra.Command {
 		Long: `Create a Grove workspace, then start an interactive coding agent in it
 with the supplied prompt. Pi is used by default; Claude Code, Codex, OpenCode,
 and custom configured agents are also supported.`,
-		Example: `  gw dispatch -b feat/login -r api,web --prompt "Implement login"
-  gw dispatch -b feat/login -p backend --agent claude --prompt "Implement login"`,
+		Example: `  gw dispatch -n -P "Implement login"  # uses dispatch config selector
+  gw dispatch -b feat/login -p backend --agent claude -P "Implement login"`,
 		Args:          cobra.NoArgs,
 		SilenceErrors: true,
 		SilenceUsage:  true,
@@ -45,25 +46,25 @@ and custom configured agents are also supported.`,
 				return err
 			}
 			return run(dispatch.Options{
-				Branch: branch,
-				Repos:  repos,
-				Preset: preset,
-				Prompt: prompt,
-				Agent:  agent,
+				Branch:  branch,
+				Repos:   repos,
+				Preset:  preset,
+				Prompt:  prompt,
+				Agent:   agent,
+				NoHooks: noHooks,
 			}, cfg)
 		},
 	}
 
 	flags := command.Flags()
-	flags.StringVarP(&branch, "branch", "b", "", "Branch name")
+	flags.StringVarP(&branch, "branch", "b", "", "Branch name (default: generated from prompt)")
 	flags.StringVarP(&repos, "repos", "r", "", "Comma-separated repo names")
 	flags.StringVarP(&preset, "preset", "p", "", "Use named preset")
-	flags.StringVar(&prompt, "prompt", "", "Initial prompt sent to the agent")
+	flags.StringVarP(&prompt, "prompt", "P", "", "Initial prompt sent to the agent")
 	flags.StringVar(&agent, "agent", "", "Agent name (default: configured agent or pi)")
 	flags.StringVar(&configPath, "config", config.DefaultPath(), "Dispatch config path")
-	_ = command.MarkFlagRequired("branch")
+	flags.BoolVarP(&noHooks, "no-hooks", "n", false, "Skip Grove lifecycle hooks")
 	_ = command.MarkFlagRequired("prompt")
-	command.MarkFlagsOneRequired("repos", "preset")
 	command.MarkFlagsMutuallyExclusive("repos", "preset")
 	command.Version = Version
 	return command

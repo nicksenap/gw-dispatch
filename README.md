@@ -3,8 +3,8 @@
 Agent-agnostic [Grove](https://github.com/nicksenap/grove) plugin that creates a workspace and starts a coding agent there with an initial prompt.
 
 ```bash
-gw dispatch -b feat/login -r api,web --prompt "Implement login"
-gw dispatch -b feat/login -p backend --agent claude --prompt "Implement login"
+gw dispatch -n -r api,web -P "Implement login"
+gw dispatch -b feat/login -p backend --agent claude -P "Implement login"
 ```
 
 Pi is the default. Claude Code, Codex, OpenCode, and user-defined agents are supported.
@@ -30,19 +30,20 @@ Requirements:
 ## Usage
 
 ```text
-gw dispatch --branch <branch> (--repos <repos> | --preset <preset>) --prompt <prompt> [flags]
+gw dispatch --prompt <prompt> [flags]
 ```
 
 | Flag | Short | Description |
 |---|---:|---|
-| `--branch` | `-b` | Branch passed to `gw create` |
-| `--repos` | `-r` | Comma-separated repositories |
-| `--preset` | `-p` | Grove preset; mutually exclusive with `--repos` |
-| `--prompt` | | Initial agent prompt |
+| `--branch` | `-b` | Branch passed to `gw create` (default: derived from prompt) |
+| `--repos` | `-r` | Comma-separated repositories; overrides dispatch config default |
+| `--preset` | `-p` | Grove preset; overrides dispatch config default |
+| `--prompt` | `-P` | Initial agent prompt |
+| `--no-hooks` | `-n` | Pass `--no-hooks` to `gw create` |
 | `--agent` | | Override the configured/default agent |
 | `--config` | | Override the dispatch config path |
 
-The workspace name follows Grove's normal branch-derived naming. For example, `feat/login` creates and opens `feat-login`.
+When `--branch` is omitted, the prompt deterministically produces `dispatch/<slug>-<8-char-hash>` using only the standard library. For example, `Fix login redirect` produces `dispatch/fix-login-redirect-98488061`. An explicit branch still follows Grove's normal branch-derived workspace naming, so `feat/login` creates and opens `feat-login`.
 
 ## Built-in agents
 
@@ -61,6 +62,8 @@ Configuration is optional. The default path is `~/.grove/dispatch.toml` (or `$GR
 
 ```toml
 default_agent = "pi"
+default_preset = "backend"
+# Alternatively: default_repos = "api,web"
 
 [agents.aider]
 command = ["aider", "--message", "{prompt}"]
@@ -69,10 +72,12 @@ command = ["aider", "--message", "{prompt}"]
 command = ["my-agent", "start", "--task={prompt}"]
 ```
 
+`default_preset` and `default_repos` are mutually exclusive. Set either one to omit `-p`/`-r` from normal invocations; an explicit selector flag overrides the dispatch default.
+
 Then run:
 
 ```bash
-gw dispatch -b feat/task -p backend --agent aider --prompt "Implement the task"
+gw dispatch -n --agent aider -P "Implement the task"
 ```
 
 ### Custom-command rules

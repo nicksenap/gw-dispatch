@@ -17,6 +17,34 @@ func TestLoadMissingUsesPiDefault(t *testing.T) {
 	}
 }
 
+func TestLoadDefaultSelector(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dispatch.toml")
+	contents := []byte("default_repos = \"api,web\"\n")
+	if err := os.WriteFile(path, contents, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.DefaultRepos != "api,web" {
+		t.Fatalf("DefaultRepos = %q, want api,web", cfg.DefaultRepos)
+	}
+}
+
+func TestLoadRejectsMultipleDefaultSelectors(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dispatch.toml")
+	contents := []byte("default_repos = \"api\"\ndefault_preset = \"backend\"\n")
+	if err := os.WriteFile(path, contents, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Load(path); err == nil {
+		t.Fatal("Load() error = nil, want mutually exclusive selector error")
+	}
+}
+
 func TestLoadCustomAgent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "dispatch.toml")
 	contents := []byte(`default_agent = "aider"

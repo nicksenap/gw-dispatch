@@ -15,7 +15,19 @@ printf '%s\n' "$@" > "$CREATE_LOG"
 if [ "${GW_EXIT:-0}" -ne 0 ]; then
   exit "$GW_EXIT"
 fi
-printf '[{"name":"feat-e2e","path":"%s"}]\n' "$WORKSPACE_PATH" > "$GROVE_STATE"
+branch=
+next_is_branch=false
+for arg in "$@"; do
+  if [ "$next_is_branch" = true ]; then
+    branch=$arg
+    break
+  fi
+  if [ "$arg" = "--branch" ]; then
+    next_is_branch=true
+  fi
+done
+name=$(printf '%s' "$branch" | sed 's#[ /]#-#g')
+printf '[{"name":"%s","path":"%s"}]\n' "$name" "$WORKSPACE_PATH" > "$GROVE_STATE"
 SCRIPT
 
 cat > "$bin/pi" <<'SCRIPT'
@@ -37,16 +49,18 @@ export WORKSPACE_PATH="$tmp/workspace"
 export CREATE_LOG="$tmp/create.log"
 export AGENT_LOG="$tmp/agent.log"
 printf '[]\n' > "$GROVE_STATE"
+printf 'default_repos = "api,web"\n' > "$tmp/dispatch.toml"
 
 prompt='fix "quotes"; echo not-evaluated'
-"$bin/gw-dispatch" --branch feat/e2e --repos api,web --prompt "$prompt"
+"$bin/gw-dispatch" -P "$prompt" -n --config "$tmp/dispatch.toml"
 
 cat > "$tmp/want-create.log" <<'EOF'
 create
 --branch
-feat/e2e
+dispatch/fix-quotes-echo-not-evaluated-fd0ad53d
 --repos
 api,web
+--no-hooks
 EOF
 
 diff -u "$tmp/want-create.log" "$CREATE_LOG"

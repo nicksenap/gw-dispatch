@@ -93,6 +93,14 @@ func TestResolveAgentUnknown(t *testing.T) {
 	}
 }
 
+func TestDeriveBranchFromPrompt(t *testing.T) {
+	got := DeriveBranchFromPrompt("  Fix   LOGIN redirect  ")
+	want := "dispatch/fix-login-redirect-98488061"
+	if got != want {
+		t.Fatalf("DeriveBranchFromPrompt() = %q, want %q", got, want)
+	}
+}
+
 func TestDeriveWorkspaceName(t *testing.T) {
 	if got := DeriveWorkspaceName("feat/my task"); got != "feat-my-task" {
 		t.Fatalf("DeriveWorkspaceName() = %q, want feat-my-task", got)
@@ -143,13 +151,14 @@ type recordedCommand struct {
 }
 
 type fakeRunner struct {
-	commands    []recordedCommand
-	statePath   string
-	workspace   string
-	createErr   error
-	agentErr    error
-	lookPathErr map[string]error
-	paths       map[string]string
+	commands      []recordedCommand
+	statePath     string
+	workspace     string
+	workspaceName string
+	createErr     error
+	agentErr      error
+	lookPathErr   map[string]error
+	paths         map[string]string
 }
 
 func (f *fakeRunner) LookPath(name string) (string, error) {
@@ -168,7 +177,11 @@ func (f *fakeRunner) Run(name string, args []string, dir string) error {
 		if f.createErr != nil {
 			return f.createErr
 		}
-		state := `[{"name":"feat-one","path":"` + f.workspace + `"}]`
+		workspaceName := f.workspaceName
+		if workspaceName == "" {
+			workspaceName = "feat-one"
+		}
+		state := `[{"name":"` + workspaceName + `","path":"` + f.workspace + `"}]`
 		return os.WriteFile(f.statePath, []byte(state), 0o600)
 	}
 	return f.agentErr
@@ -177,13 +190,13 @@ func (f *fakeRunner) Run(name string, args []string, dir string) error {
 func TestRunCreatesWorkspaceThenStartsAgentThere(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	runner := &fakeRunner{statePath: statePath, workspace: "/workspaces/feat-one"}
-	opts := Options{Branch: "feat/one", Repos: "api,web", Prompt: "build it", Agent: "pi", StatePath: statePath}
+	opts := Options{Branch: "feat/one", Repos: "api,web", Prompt: "build it", Agent: "pi", NoHooks: true, StatePath: statePath}
 
 	if err := Run(opts, config.Config{}, runner); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 	want := []recordedCommand{
-		{name: "/fake/gw", args: []string{"create", "--branch", "feat/one", "--repos", "api,web"}},
+		{name: "/fake/gw", args: []string{"create", "--branch", "feat/one", "--repos", "api,web", "--no-hooks"}},
 		{name: "/fake/pi", args: []string{"build it"}, dir: "/workspaces/feat-one"},
 	}
 	if !reflect.DeepEqual(runner.commands, want) {
@@ -191,13 +204,31 @@ func TestRunCreatesWorkspaceThenStartsAgentThere(t *testing.T) {
 	}
 }
 
+func TestRunDerivesBranchFromPromptWhenOmitted(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "state.json")
+	runner := &fakeRunner{
+		statePath:     statePath,
+		workspace:     "/workspaces/dispatch-fix-login-redirect-98488061",
+		workspaceName: "dispatch-fix-login-redirect-98488061",
+	}
+	opts := Options{Repos: "api", Prompt: "Fix login redirect", Agent: "pi", StatePath: statePath}
+
+	if err := Run(opts, config.Config{}, runner); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	wantCreateArgs := []string{"create", "--branch", "dispatch/fix-login-redirect-98488061", "--repos", "api"}
+	if got := runner.commands[0].args; !reflect.DeepEqual(got, wantCreateArgs) {
+		t.Fatalf("create args = %#v, want %#v", got, wantCreateArgs)
+	}
+}
+
 func TestRunUsesPresetAndConfiguredDefaultAgent(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "state.json")
 	runner := &fakeRunner{statePath: statePath, workspace: "/workspaces/feat-one"}
-	cfg := config.Config{DefaultAgent: "custom", Agents: map[string]config.Agent{
+	cfg := config.Config{DefaultAgent: "custom", DefaultPreset: "backend", Agents: map[string]config.Agent{
 		"custom": {Command: []string{"custom-agent", "--prompt", "{prompt}"}},
 	}}
-	opts := Options{Branch: "feat/one", Preset: "backend", Prompt: "build it", StatePath: statePath}
+	opts := Options{Branch: "feat/one", Prompt: "build it", StatePath: statePath}
 
 	if err := Run(opts, cfg, runner); err != nil {
 		t.Fatalf("Run() error = %v", err)
@@ -207,6 +238,20 @@ func TestRunUsesPresetAndConfiguredDefaultAgent(t *testing.T) {
 	}
 	if got := runner.commands[1].name; got != "/fake/custom-agent" {
 		t.Fatalf("agent command = %q, want /fake/custom-agent", got)
+	}
+}
+
+func TestRunSelectorFlagOverridesConfiguredDefault(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "state.json")
+	runner := &fakeRunner{statePath: statePath, workspace: "/workspaces/feat-one"}
+	cfg := config.Config{DefaultPreset: "backend"}
+	opts := Options{Branch: "feat/one", Repos: "api", Prompt: "build it", StatePath: statePath}
+
+	if err := Run(opts, cfg, runner); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if got := runner.commands[0].args; !reflect.DeepEqual(got, []string{"create", "--branch", "feat/one", "--repos", "api"}) {
+		t.Fatalf("create args = %#v", got)
 	}
 }
 

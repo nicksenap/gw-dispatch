@@ -1,4 +1,7 @@
 default_agent = "pi"
+# Configure one selector default to omit -p/-r from normal dispatch commands.
+default_preset = "backend"
+# default_repos = "api,web"
 
 # Custom agents are argv arrays. The prompt placeholder must appear in an
 # argument and is passed without shell evaluation.

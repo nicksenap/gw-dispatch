@@ -13,8 +13,10 @@ import (
 const promptPlaceholder = "{prompt}"
 
 type Config struct {
-	DefaultAgent string           `toml:"default_agent"`
-	Agents       map[string]Agent `toml:"agents"`
+	DefaultAgent  string           `toml:"default_agent"`
+	DefaultPreset string           `toml:"default_preset"`
+	DefaultRepos  string           `toml:"default_repos"`
+	Agents        map[string]Agent `toml:"agents"`
 }
 
 type Agent struct {
@@ -57,6 +59,11 @@ func Load(path string) (Config, error) {
 	}
 	if cfg.Agents == nil {
 		cfg.Agents = make(map[string]Agent)
+	}
+	cfg.DefaultPreset = strings.TrimSpace(cfg.DefaultPreset)
+	cfg.DefaultRepos = strings.TrimSpace(cfg.DefaultRepos)
+	if cfg.DefaultPreset != "" && cfg.DefaultRepos != "" {
+		return Config{}, fmt.Errorf("default_preset and default_repos are mutually exclusive")
 	}
 	for name, agent := range cfg.Agents {
 		if strings.TrimSpace(name) == "" {
