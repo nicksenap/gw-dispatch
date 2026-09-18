@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.0
+
+### Added
+
+- `--pr <github-pr-url>`: resolve the PR's head branch and repository through `gh` and `gw repos --json`, create the workspace with `--track` and `--source-*` provenance, and start the agent with a review prompt (or your `--prompt`) plus the PR context. `--repos` may add sibling repos; `--branch` and `--preset` are rejected with `--pr`.
+
 ## v0.2.0
 
 ### Added

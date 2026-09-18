@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/nicksenap/gw-dispatch/internal/config"
+	"github.com/nicksenap/gw-dispatch/internal/pr"
 )
 
 const promptPlaceholder = "{prompt}"
@@ -28,11 +29,16 @@ type Options struct {
 	Agent     string
 	NoHooks   bool
 	StatePath string
+	// PR, when set, is a pull-request URL. Branch and the primary repo are
+	// resolved from it; Repos may add sibling repos; Prompt defaults to a
+	// review prompt and always receives the PR context.
+	PR string
 }
 
 type Runner interface {
 	LookPath(name string) (string, error)
 	Run(name string, args []string, dir string) error
+	Output(name string, args []string) ([]byte, error)
 }
 
 func ResolveAgent(cfg config.Config, name, prompt string) ([]string, error) {
@@ -135,11 +141,36 @@ func Run(opts Options, cfg config.Config, runner Runner) error {
 	branch := strings.TrimSpace(opts.Branch)
 	repos := strings.TrimSpace(opts.Repos)
 	preset := strings.TrimSpace(opts.Preset)
-	if strings.TrimSpace(opts.Prompt) == "" {
+	prompt := opts.Prompt
+	sourceArgs := []string(nil)
+	track := false
+
+	if prURL := strings.TrimSpace(opts.PR); prURL != "" {
+		if branch != "" || preset != "" {
+			return fmt.Errorf("--pr cannot be combined with --branch or --preset")
+		}
+		info, err := resolvePR(prURL, runner)
+		if err != nil {
+			return err
+		}
+		branch = info.Branch
+		track = true
+		repos = mergeRepos(info.RepoName, repos)
+		if strings.TrimSpace(prompt) == "" {
+			prompt = pr.DefaultPrompt(info.Info)
+		}
+		prompt += pr.Context(info.Info)
+		sourceArgs = []string{
+			"--source-url", info.URL, "--source-provider", info.Provider,
+			"--source-ref", fmt.Sprint(info.Number), "--source-title", info.Title,
+		}
+	}
+
+	if strings.TrimSpace(prompt) == "" {
 		return fmt.Errorf("prompt is required")
 	}
 	if branch == "" {
-		branch = DeriveBranchFromPrompt(opts.Prompt)
+		branch = DeriveBranchFromPrompt(prompt)
 	}
 	if repos == "" && preset == "" {
 		repos = strings.TrimSpace(cfg.DefaultRepos)
@@ -149,7 +180,7 @@ func Run(opts Options, cfg config.Config, runner Runner) error {
 		return fmt.Errorf("exactly one of repos or preset is required, either as a flag or dispatch config default")
 	}
 
-	agentCommand, err := ResolveAgent(cfg, opts.Agent, opts.Prompt)
+	agentCommand, err := ResolveAgent(cfg, opts.Agent, prompt)
 	if err != nil {
 		return err
 	}
@@ -168,6 +199,10 @@ func Run(opts Options, cfg config.Config, runner Runner) error {
 	} else {
 		createArgs = append(createArgs, "--preset", preset)
 	}
+	if track {
+		createArgs = append(createArgs, "--track")
+	}
+	createArgs = append(createArgs, sourceArgs...)
 	if opts.NoHooks {
 		createArgs = append(createArgs, "--no-hooks")
 	}
@@ -199,4 +234,47 @@ func resolveExecutable(runner Runner, name string) (string, error) {
 		return resolved, nil
 	}
 	return filepath.Abs(resolved)
+}
+
+type resolvedPR struct {
+	pr.Info
+	RepoName string
+}
+
+// resolvePR parses the URL, asks gh for the head branch, and maps the PR's
+// owner/repo onto a configured Grove repo via gw repos --json.
+func resolvePR(prURL string, runner Runner) (resolvedPR, error) {
+	info, err := pr.Parse(prURL)
+	if err != nil {
+		return resolvedPR{}, err
+	}
+	if _, err := runner.LookPath("gh"); err != nil {
+		return resolvedPR{}, fmt.Errorf("--pr requires the gh CLI: %w", err)
+	}
+	info, err = pr.Fetch(info, runner)
+	if err != nil {
+		return resolvedPR{}, err
+	}
+	reposJSON, err := runner.Output("gw", []string{"repos", "--json"})
+	if err != nil {
+		return resolvedPR{}, fmt.Errorf("gw repos --json: %w", err)
+	}
+	repoName, err := pr.MatchRepo(reposJSON, info.OwnerRepo())
+	if err != nil {
+		return resolvedPR{}, err
+	}
+	return resolvedPR{Info: info, RepoName: repoName}, nil
+}
+
+// mergeRepos puts primary first and appends any extra comma-separated repos
+// not already present.
+func mergeRepos(primary, extra string) string {
+	out := []string{primary}
+	for _, name := range strings.Split(extra, ",") {
+		name = strings.TrimSpace(name)
+		if name != "" && name != primary {
+			out = append(out, name)
+		}
+	}
+	return strings.Join(out, ",")
 }

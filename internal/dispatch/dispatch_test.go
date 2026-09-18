@@ -159,6 +159,16 @@ type fakeRunner struct {
 	agentErr      error
 	lookPathErr   map[string]error
 	paths         map[string]string
+	outputs       map[string][]byte // keyed by command name; returned from Output
+	outputErr     map[string]error
+}
+
+func (f *fakeRunner) Output(name string, args []string) ([]byte, error) {
+	f.commands = append(f.commands, recordedCommand{name: name, args: append([]string(nil), args...)})
+	if err := f.outputErr[name]; err != nil {
+		return nil, err
+	}
+	return f.outputs[name], nil
 }
 
 func (f *fakeRunner) LookPath(name string) (string, error) {
@@ -350,5 +360,76 @@ func TestRunReportsRetainedWorkspaceWhenAgentFails(t *testing.T) {
 	err := Run(opts, config.Config{}, runner)
 	if err == nil || !strings.Contains(err.Error(), "workspace retained at /workspaces/feat-one") {
 		t.Fatalf("Run() error = %v, want retained workspace path", err)
+	}
+}
+
+func TestRunWithPRTracksHeadBranchAndDefaultsToReviewPrompt(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "state.json")
+	runner := &fakeRunner{
+		statePath: statePath, workspace: "/workspaces/feat-login", workspaceName: "feat-login",
+		outputs: map[string][]byte{
+			"gh": []byte(`{"headRefName":"feat/login","title":"Add login","body":"Adds the login form.","isCrossRepository":false}`),
+			"gw": []byte(`[{"name":"api","display_name":"acme/api","remote":"git@github.com:acme/api.git"},{"name":"web","display_name":"acme/web"}]`),
+		},
+	}
+	opts := Options{PR: "https://github.com/acme/api/pull/42", Repos: "web", Agent: "pi", StatePath: statePath}
+
+	if err := Run(opts, config.Config{}, runner); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	var create, agent recordedCommand
+	for _, c := range runner.commands {
+		switch {
+		case filepath.Base(c.name) == "gw" && len(c.args) > 0 && c.args[0] == "create":
+			create = c
+		case filepath.Base(c.name) == "pi":
+			agent = c
+		}
+	}
+	wantCreate := []string{"create", "--branch", "feat/login", "--repos", "api,web", "--track",
+		"--source-url", "https://github.com/acme/api/pull/42", "--source-provider", "github",
+		"--source-ref", "42", "--source-title", "Add login"}
+	if !reflect.DeepEqual(create.args, wantCreate) {
+		t.Fatalf("create args = %#v, want %#v", create.args, wantCreate)
+	}
+	if agent.dir != "/workspaces/feat-login" || len(agent.args) != 1 ||
+		!strings.Contains(agent.args[0], "Review pull request #42") ||
+		!strings.Contains(agent.args[0], "Adds the login form.") {
+		t.Fatalf("agent = %#v", agent)
+	}
+}
+
+func TestRunWithPRKeepsExplicitPromptAndAppendsContext(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "state.json")
+	runner := &fakeRunner{
+		statePath: statePath, workspace: "/w", workspaceName: "fix-it",
+		outputs: map[string][]byte{
+			"gh": []byte(`{"headRefName":"fix-it","title":"Fix","body":""}`),
+			"gw": []byte(`[{"name":"api","display_name":"acme/api"}]`),
+		},
+	}
+	err := Run(Options{PR: "https://github.com/acme/api/pull/7", Prompt: "Fix the tests", StatePath: statePath}, config.Config{}, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := runner.commands[len(runner.commands)-1]
+	if !strings.HasPrefix(last.args[0], "Fix the tests\n\nPull request: https://github.com/acme/api/pull/7") {
+		t.Fatalf("prompt = %q", last.args[0])
+	}
+}
+
+func TestRunWithPRRejectsBranchAndUnmatchedRepo(t *testing.T) {
+	runner := &fakeRunner{outputs: map[string][]byte{
+		"gh": []byte(`{"headRefName":"x","title":"t"}`),
+		"gw": []byte(`[{"name":"other","display_name":"acme/other"}]`),
+	}}
+	if err := Run(Options{PR: "https://github.com/acme/api/pull/1", Branch: "b"}, config.Config{}, runner); err == nil || !strings.Contains(err.Error(), "--pr cannot be combined") {
+		t.Fatalf("err = %v", err)
+	}
+	if err := Run(Options{PR: "https://github.com/acme/api/pull/1"}, config.Config{}, runner); err == nil || !strings.Contains(err.Error(), "no configured Grove repo has remote acme/api") {
+		t.Fatalf("err = %v", err)
+	}
+	if len(runner.commands) > 0 && runner.commands[len(runner.commands)-1].args[0] == "create" {
+		t.Fatal("gw create must not run when PR resolution fails")
 	}
 }

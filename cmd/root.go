@@ -23,6 +23,7 @@ func newRootCommand(run dispatchFunc) *cobra.Command {
 	var agent string
 	var configPath string
 	var noHooks bool
+	var prURL string
 
 	command := &cobra.Command{
 		Use:   "gw-dispatch",
@@ -31,7 +32,9 @@ func newRootCommand(run dispatchFunc) *cobra.Command {
 with the supplied prompt. Pi is used by default; Claude Code, Codex, OpenCode,
 and custom configured agents are also supported.`,
 		Example: `  gw dispatch -n -P "Implement login"  # uses dispatch config selector
-  gw dispatch -b feat/login -p backend --agent claude -P "Implement login"`,
+  gw dispatch -b feat/login -p backend --agent claude -P "Implement login"
+  gw dispatch --pr https://github.com/acme/api/pull/42            # review the PR
+  gw dispatch --pr https://github.com/acme/api/pull/42 -P "Fix the failing tests"`,
 		Args:          cobra.NoArgs,
 		SilenceErrors: true,
 		SilenceUsage:  true,
@@ -45,6 +48,9 @@ and custom configured agents are also supported.`,
 			if err != nil {
 				return err
 			}
+			if prompt == "" && prURL == "" {
+				return fmt.Errorf("required flag(s) \"prompt\" not set")
+			}
 			return run(dispatch.Options{
 				Branch:  branch,
 				Repos:   repos,
@@ -52,6 +58,7 @@ and custom configured agents are also supported.`,
 				Prompt:  prompt,
 				Agent:   agent,
 				NoHooks: noHooks,
+				PR:      prURL,
 			}, cfg)
 		},
 	}
@@ -64,8 +71,10 @@ and custom configured agents are also supported.`,
 	flags.StringVar(&agent, "agent", "", "Agent name (default: configured agent or pi)")
 	flags.StringVar(&configPath, "config", config.DefaultPath(), "Dispatch config path")
 	flags.BoolVarP(&noHooks, "no-hooks", "n", false, "Skip Grove lifecycle hooks")
-	_ = command.MarkFlagRequired("prompt")
+	flags.StringVar(&prURL, "pr", "", "GitHub pull request URL: check out its head branch (--track) and default the prompt to a review")
 	command.MarkFlagsMutuallyExclusive("repos", "preset")
+	command.MarkFlagsMutuallyExclusive("pr", "branch")
+	command.MarkFlagsMutuallyExclusive("pr", "preset")
 	command.Version = Version
 	return command
 }

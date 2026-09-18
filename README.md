@@ -5,6 +5,7 @@ Agent-agnostic [Grove](https://github.com/nicksenap/grove) plugin that creates a
 ```bash
 gw dispatch -n -r api,web -P "Implement login"
 gw dispatch -b feat/login -p backend --agent claude -P "Implement login"
+gw dispatch --pr https://github.com/acme/api/pull/42
 ```
 
 Pi is the default. Claude Code, Codex, OpenCode, and user-defined agents are supported.
@@ -40,10 +41,27 @@ gw dispatch --prompt <prompt> [flags]
 | `--preset` | `-p` | Grove preset; overrides dispatch config default |
 | `--prompt` | `-P` | Initial agent prompt |
 | `--no-hooks` | `-n` | Pass `--no-hooks` to `gw create` |
+| `--pr` | | GitHub pull request URL; see [Reviewing a pull request](#reviewing-a-pull-request) |
 | `--agent` | | Override the configured/default agent |
 | `--config` | | Override the dispatch config path |
 
 When `--branch` is omitted, the prompt deterministically produces `dispatch/<slug>-<8-char-hash>` using only the standard library. For example, `Fix login redirect` produces `dispatch/fix-login-redirect-98488061`. An explicit branch still follows Grove's normal branch-derived workspace naming, so `feat/login` creates and opens `feat-login`.
+
+## Reviewing a pull request
+
+```bash
+gw dispatch --pr https://github.com/acme/api/pull/42
+gw dispatch --pr https://github.com/acme/api/pull/42 -r web -P "Fix the failing tests"
+```
+
+`--pr` turns a GitHub PR URL into a workspace on the PR's head branch:
+
+1. `gh pr view` resolves the head branch, title, and description (requires the [gh CLI](https://cli.github.com), authenticated).
+2. The PR's `owner/repo` is matched against `gw repos --json`; the matching Grove repo becomes the workspace's primary repo. `--repos` may add sibling repos, which get fresh branches from their base.
+3. `gw create --branch <head> --track --source-url ... --source-provider github --source-ref <N> --source-title ...` checks the existing remote branch out and records the PR as the workspace source.
+4. The agent starts with your `--prompt`, or a default review prompt when omitted. Either way the PR URL, title, head branch, and description are appended.
+
+`--pr` cannot be combined with `--branch` or `--preset`. PRs from forks are rejected because their head branch is not on `origin`.
 
 ## Built-in agents
 

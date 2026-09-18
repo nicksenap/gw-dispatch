@@ -153,3 +153,20 @@ func TestCommandRejectsReposAndPresetTogether(t *testing.T) {
 		t.Fatalf("Execute() error = %v, want mutual exclusion error", err)
 	}
 }
+
+func TestCommandAllowsPRWithoutPromptAndRejectsPRWithBranch(t *testing.T) {
+	var got dispatch.Options
+	command := newRootCommand(func(opts dispatch.Options, _ config.Config) error { got = opts; return nil })
+	command.SetArgs([]string{"--pr", "https://github.com/acme/api/pull/1"})
+	if err := command.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if got.PR != "https://github.com/acme/api/pull/1" || got.Prompt != "" {
+		t.Fatalf("opts = %+v", got)
+	}
+	command = newRootCommand(func(dispatch.Options, config.Config) error { return nil })
+	command.SetArgs([]string{"--pr", "https://github.com/acme/api/pull/1", "--branch", "x"})
+	if err := command.Execute(); err == nil {
+		t.Fatal("expected mutual exclusion error")
+	}
+}
